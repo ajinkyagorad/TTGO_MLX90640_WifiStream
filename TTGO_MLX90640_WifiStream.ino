@@ -99,29 +99,37 @@ void loop()
 
   MLX90640_CalculateTo(mlx90640Frame, &mlx90640, emissivity, tr, mlx90640To);
 
+  // Get min and max temperature for the current frame
+  float minTemp = mlx90640To[0], maxTemp = mlx90640To[0];
+  for (int i = 1; i < 768; i++) {
+    if (mlx90640To[i] < minTemp) minTemp = mlx90640To[i];
+    if (mlx90640To[i] > maxTemp) maxTemp = mlx90640To[i];
+  }
+
   // Display thermal data as heatmap on TFT
-  drawHeatmap(mlx90640To);
+  drawHeatmap(mlx90640To, minTemp, maxTemp);
 }
 
 // Function to draw the heatmap on the TFT display
-void drawHeatmap(float *data)
+void drawHeatmap(float *data, float minTemp, float maxTemp)
 {
   for (int y = 0; y < 24; y++)
   {
     for (int x = 0; x < 32; x++)
     {
       float temp = data[y * 32 + x];
-      uint16_t color = getColorFromTemp(temp);
+      uint16_t color = getColorFromTemp(temp, minTemp, maxTemp);
       tft.fillRect(x * 5, y * 5, 5, 5, color);  // Scaling up each cell for better visualization
     }
   }
 }
 
 // Function to map temperature to color using a new HSV-like color gradient
-uint16_t getColorFromTemp(float temp)
+uint16_t getColorFromTemp(float temp, float minTemp, float maxTemp)
 {
-  // Map temperature to HSV-like gradient for better sensitivity
-  float hue = map(temp, 0, 50, 0, 360); // Assuming temperature range 0-50 degrees Celsius
+  // Map temperature to HSV-like gradient for better sensitivity based on min and max values
+  float normalized = (temp - minTemp) / (maxTemp - minTemp);
+  float hue = normalized * 360; // Scale normalized value to 360 degrees hue
   uint8_t red = 0, green = 0, blue = 0;
 
   if (hue < 60) {
@@ -152,52 +160,136 @@ uint16_t getColorFromTemp(float temp)
 
   return tft.color565(red, green, blue);
 }
-
 // Handle HTTP request to serve the thermal data
 void handleRoot() {
-  String html = "<html><head><title>Thermal Camera Stream</title>";
-  html += "<style>body { font-family: Arial; text-align: center; background-color: #000; color: #00ff00; } ";
-  html += "h1 { color: #00ff00; } canvas { border: 1px solid #00ff00; width: 1600px; height: 1200px; image-rendering: pixelated; }</style></head><body>";
-  html += "<h1>MLX90640 Thermal Camera Stream</h1>";
+  String html = "<html><head><title>Thermal Camera Dashboard</title>";
+  html += "<style>";
+  html += "body { font-family: Arial, sans-serif; background-color: #ffffff; color: #000000; display: flex; flex-wrap: wrap; justify-content: space-evenly; align-items: center; height: 100vh; margin: 0; overflow: hidden; }";
+  html += ".section { display: flex; flex-direction: column; align-items: center; }";
+  html += "#thermalCanvas { border: 1px solid #000000; width: 30vw; height: auto; image-rendering: pixelated; }";
+  html += "#minMaxAvg { width: 10vw; text-align: center; }";
+  html += "#histChart { width: 20vw; height: auto; }";
+  html += "#tempChart { width: 100vw; height: auto; }";
+  html += ".stat { font-size: 1.2em; margin-top: 10px; }";
+  html += "</style></head><body>";
+  html += "<div class='section'>";
+  html += "<h2>Thermal Image</h2>";
   html += "<canvas id='thermalCanvas' width='320' height='240'></canvas>";
-  html += "<p>Min Temp: <span id='minTemp'></span> &#8451; | Max Temp: <span id='maxTemp'></span> &#8451;</p>";
-  html += "<script>";
+  html += "</div>";
+  html += "<div id='minMaxAvg' class='section'>";
+  html += "<h2>Temperature Stats</h2>";
+  html += "<p class='stat'>Min Temp: <span id='minTemp'></span> &#8451;</p>";
+  html += "<p class='stat'>Max Temp: <span id='maxTemp'></span> &#8451;</p>";
+  html += "<p class='stat'>Avg Temp: <span id='avgTemp'></span> &#8451;</p>";
+  html += "<p class='stat'>Y-Axis Limits: <input type='number' id='yMin' value='0'> to <input type='number' id='yMax' value='100'></p>";
+  html += "</div>";
+  html += "<div class='section'>";
+  html += "<h2>Temperature Distribution</h2>";
+  html += "<canvas id='histChart'></canvas>";
+  html += "</div>";
+  html += "<div class='section' style='width: 100%;'>";
+  html += "<h2>Temperature Trends</h2>";
+  html += "<canvas id='tempChart'></canvas>";
+  html += "</div>";
+  html += "<script src='https://cdn.jsdelivr.net/npm/chart.js'></script><script>";
+
+  // Fetch Data Function
+  html += "let tempChart, histChart;";
+  html += "let startTime = Date.now();";
   html += "async function fetchData() {";
   html += "let response = await fetch('/data');";
   html += "let data = await response.json();";
   html += "let canvas = document.getElementById('thermalCanvas');";
   html += "let ctx = canvas.getContext('2d');";
-  html += "let imgData = ctx.createImageData(32, 24);";
+  html += "let imgData = ctx.createImageData(320, 240);";
   html += "let minTemp = Math.min(...data);";
   html += "let maxTemp = Math.max(...data);";
+  html += "let avgTemp = data.reduce((sum, value) => sum + value, 0) / data.length;";
   html += "document.getElementById('minTemp').innerText = minTemp.toFixed(2);";
   html += "document.getElementById('maxTemp').innerText = maxTemp.toFixed(2);";
-  html += "for (let i = 0; i < data.length; i++) {";
-  html += "let color = getColorFromTemp(data[i], minTemp, maxTemp);";
-  html += "imgData.data[i * 4] = color.r;";
-  html += "imgData.data[i * 4 + 1] = color.g;";
-  html += "imgData.data[i * 4 + 2] = color.b;";
-  html += "imgData.data[i * 4 + 3] = 255;";
+  html += "document.getElementById('avgTemp').innerText = avgTemp.toFixed(2);";
+
+  // Scaling up the 32x24 data to 320x240
+  html += "for (let y = 0; y < 24; y++) {";
+  html += "  for (let x = 0; x < 32; x++) {";
+  html += "    let temp = data[y * 32 + x];";
+  html += "    let color = getColorFromTemp(temp, minTemp, maxTemp);";
+  html += "    for (let scaleY = 0; scaleY < 10; scaleY++) {";
+  html += "      for (let scaleX = 0; scaleX < 10; scaleX++) {";
+  html += "        let index = 4 * ((y * 10 + scaleY) * 320 + (x * 10 + scaleX));";
+  html += "        imgData.data[index] = color.r;";
+  html += "        imgData.data[index + 1] = color.g;";
+  html += "        imgData.data[index + 2] = color.b;";
+  html += "        imgData.data[index + 3] = 255;";
+  html += "      }";
+  html += "    }";
+  html += "  }";
   html += "}";
+
   html += "ctx.putImageData(imgData, 0, 0);";
+  html += "updateCharts(minTemp, maxTemp, avgTemp, data);";
   html += "requestAnimationFrame(fetchData);";
   html += "}";
+
+  // Data Arrays for Charts
+  html += "let minSeries = [], maxSeries = [], avgSeries = [], histogram = new Array(51).fill(0);";
+
+  // Update Charts Function
+  html += "function updateCharts(minTemp, maxTemp, avgTemp, data) {";
+  html += "  let currentTime = (Date.now() - startTime) / 1000;";
+  html += "  if (minSeries.length >= 20) { minSeries.shift(); maxSeries.shift(); avgSeries.shift(); }";  // Limit data points to 20 seconds
+  html += "  minSeries.push({x: currentTime, y: minTemp});";
+  html += "  maxSeries.push({x: currentTime, y: maxTemp});";
+  html += "  avgSeries.push({x: currentTime, y: avgTemp});";
+  html += "  histogram.fill(0);";  // Reset histogram
+  html += "  data.forEach(temp => { histogram[Math.min(50, Math.floor(temp))]++; });";  // Update histogram
+  html += "  renderCharts();";
+  html += "}";
+
+  // Render Charts Function
+  html += "function renderCharts() {";
+  html += "  let yMin = parseFloat(document.getElementById('yMin').value);";
+  html += "  let yMax = parseFloat(document.getElementById('yMax').value);";
+
+  html += "  if (!tempChart) {";
+  html += "    const ctx1 = document.getElementById('tempChart').getContext('2d');";
+  html += "    tempChart = new Chart(ctx1, { type: 'line', data: { datasets: [{ label: 'Min Temp', data: minSeries, borderColor: 'blue', fill: false, pointRadius: 0 }, { label: 'Max Temp', data: maxSeries, borderColor: 'red', fill: false, pointRadius: 0 }, { label: 'Avg Temp', data: avgSeries, borderColor: 'green', fill: false, pointRadius: 0 }] }, options: { responsive: true, maintainAspectRatio: true, scales: { x: { type: 'linear', position: 'bottom', title: { display: true, text: 'Time (s)' }, min: 0, max: 20 }, y: { min: yMin, max: yMax } } } });";
+  html += "  } else {";
+  html += "    tempChart.options.scales.y.min = yMin;";
+  html += "    tempChart.options.scales.y.max = yMax;";
+  html += "    tempChart.data.datasets[0].data = minSeries;";
+  html += "    tempChart.data.datasets[1].data = maxSeries;";
+  html += "    tempChart.data.datasets[2].data = avgSeries;";
+  html += "    tempChart.update();";
+  html += "  }";
+
+  html += "  if (!histChart) {";
+  html += "    const ctx2 = document.getElementById('histChart').getContext('2d');";
+  html += "    histChart = new Chart(ctx2, { type: 'bar', data: { labels: Array.from({length: 51}, (_, i) => i), datasets: [{ label: 'Temperature Frequency', data: histogram, backgroundColor: 'orange' }] }, options: { responsive: true, maintainAspectRatio: true, scales: { y: { beginAtZero: true } } } });";
+  html += "  } else {";
+  html += "    histChart.data.datasets[0].data = histogram;";
+  html += "    histChart.update();";
+  html += "  }";
+  html += "}";
+
+  // Get Color From Temperature
   html += "function getColorFromTemp(temp, minTemp, maxTemp) {";
   html += "let normalized = (temp - minTemp) / (maxTemp - minTemp);";
-  html += "let hue = normalized * 360;";
+  html += "let hue = normalized * 240;"; // Change hue scale to 0-240 to avoid extreme colors
   html += "let red = 0, green = 0, blue = 0;";
   html += "if (hue < 60) { red = 255; green = Math.floor((hue / 60) * 255); blue = 0; }";
   html += "else if (hue < 120) { red = Math.floor(((120 - hue) / 60) * 255); green = 255; blue = 0; }";
   html += "else if (hue < 180) { red = 0; green = 255; blue = Math.floor(((hue - 120) / 60) * 255); }";
   html += "else if (hue < 240) { red = 0; green = Math.floor(((240 - hue) / 60) * 255); blue = 255; }";
-  html += "else if (hue < 300) { red = Math.floor(((hue - 240) / 60) * 255); green = 0; blue = 255; }";
-  html += "else { red = 255; green = 0; blue = Math.floor(((360 - hue) / 60) * 255); }";
   html += "return {r: red, g: green, b: blue}; }";
+
   html += "fetchData();";
   html += "</script></body></html>";
 
   server.send(200, "text/html", html);
 }
+
+
 
 // Function to generate BMP image data in base64 format
 void handleData() {
