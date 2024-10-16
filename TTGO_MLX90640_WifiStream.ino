@@ -106,72 +106,100 @@ void loop()
 // Function to draw the heatmap on the TFT display
 void drawHeatmap(float *data)
 {
-  float minTemp = data[0];
-  float maxTemp = data[0];
-
-  // Find the min and max temperature in the frame
-  for (int i = 0; i < 768; i++) {
-    float temp = data[i];
-    if (temp < minTemp) minTemp = temp;
-    if (temp > maxTemp) maxTemp = temp;
-  }
-
-  // Normalize and display thermal data
-  for (int y = 0; y < 24; y++) {
-    for (int x = 0; x < 32; x++) {
+  for (int y = 0; y < 24; y++)
+  {
+    for (int x = 0; x < 32; x++)
+    {
       float temp = data[y * 32 + x];
-      float normalizedTemp = (temp - minTemp) / (maxTemp - minTemp);
-      uint16_t color = getColorFromNormalizedTemp(normalizedTemp);
+      uint16_t color = getColorFromTemp(temp);
       tft.fillRect(x * 5, y * 5, 5, 5, color);  // Scaling up each cell for better visualization
     }
   }
 }
 
-// Function to map normalized temperature (0-1) to color
-uint16_t getColorFromNormalizedTemp(float normalizedTemp) {
-  uint8_t red = (uint8_t)(normalizedTemp * 255);
-  uint8_t green = (uint8_t)((1.0 - normalizedTemp) * 255);
-  uint8_t blue = 0;
+// Function to map temperature to color using a new HSV-like color gradient
+uint16_t getColorFromTemp(float temp)
+{
+  // Map temperature to HSV-like gradient for better sensitivity
+  float hue = map(temp, 0, 50, 0, 360); // Assuming temperature range 0-50 degrees Celsius
+  uint8_t red = 0, green = 0, blue = 0;
+
+  if (hue < 60) {
+    red = 255;
+    green = map(hue, 0, 60, 0, 255);
+    blue = 0;
+  } else if (hue < 120) {
+    red = map(hue, 60, 120, 255, 0);
+    green = 255;
+    blue = 0;
+  } else if (hue < 180) {
+    red = 0;
+    green = 255;
+    blue = map(hue, 120, 180, 0, 255);
+  } else if (hue < 240) {
+    red = 0;
+    green = map(hue, 180, 240, 255, 0);
+    blue = 255;
+  } else if (hue < 300) {
+    red = map(hue, 240, 300, 0, 255);
+    green = 0;
+    blue = 255;
+  } else {
+    red = 255;
+    green = 0;
+    blue = map(hue, 300, 360, 255, 0);
+  }
 
   return tft.color565(red, green, blue);
 }
 
-// Handle HTTP request to serve the HTML page
+// Handle HTTP request to serve the thermal data
 void handleRoot() {
   String html = "<html><head><title>Thermal Camera Stream</title>";
-  html += "<meta http-equiv='refresh' content='0.1'>"; // Refresh the page every 0.1 seconds for live updates
-  html += "<style>body { font-family: Arial; text-align: center; background-color: #f0f0f0; } ";
-  html += "h1 { color: #333; } canvas { border: 1px solid #333; }</style></head><body>";
+  html += "<style>body { font-family: Arial; text-align: center; background-color: #000; color: #00ff00; } ";
+  html += "h1 { color: #00ff00; } canvas { border: 1px solid #00ff00; width: 1600px; height: 1200px; image-rendering: pixelated; }</style></head><body>";
   html += "<h1>MLX90640 Thermal Camera Stream</h1>";
-  html += "<canvas id='thermalCanvas' width='160' height='120'></canvas>";
+  html += "<canvas id='thermalCanvas' width='320' height='240'></canvas>";
+  html += "<p>Min Temp: <span id='minTemp'></span> &#8451; | Max Temp: <span id='maxTemp'></span> &#8451;</p>";
   html += "<script>";
-  html += "setInterval(async function() {";
+  html += "async function fetchData() {";
   html += "let response = await fetch('/data');";
   html += "let data = await response.json();";
   html += "let canvas = document.getElementById('thermalCanvas');";
   html += "let ctx = canvas.getContext('2d');";
   html += "let imgData = ctx.createImageData(32, 24);";
+  html += "let minTemp = Math.min(...data);";
+  html += "let maxTemp = Math.max(...data);";
+  html += "document.getElementById('minTemp').innerText = minTemp.toFixed(2);";
+  html += "document.getElementById('maxTemp').innerText = maxTemp.toFixed(2);";
   html += "for (let i = 0; i < data.length; i++) {";
-  html += "let color = getColorFromTemp(data[i]);";
+  html += "let color = getColorFromTemp(data[i], minTemp, maxTemp);";
   html += "imgData.data[i * 4] = color.r;";
   html += "imgData.data[i * 4 + 1] = color.g;";
   html += "imgData.data[i * 4 + 2] = color.b;";
   html += "imgData.data[i * 4 + 3] = 255;";
   html += "}";
   html += "ctx.putImageData(imgData, 0, 0);";
-  html += "}, 100);";
-  html += "function getColorFromTemp(temp) {";
+  html += "requestAnimationFrame(fetchData);";
+  html += "}";
+  html += "function getColorFromTemp(temp, minTemp, maxTemp) {";
+  html += "let normalized = (temp - minTemp) / (maxTemp - minTemp);";
+  html += "let hue = normalized * 360;";
   html += "let red = 0, green = 0, blue = 0;";
-  html += "if (temp < 20) { blue = 255; }";
-  html += "else if (temp < 30) { green = 255; blue = 255 - (temp - 20) * 25.5; }";
-  html += "else { red = 255; green = 255 - (temp - 30) * 25.5; }";
+  html += "if (hue < 60) { red = 255; green = Math.floor((hue / 60) * 255); blue = 0; }";
+  html += "else if (hue < 120) { red = Math.floor(((120 - hue) / 60) * 255); green = 255; blue = 0; }";
+  html += "else if (hue < 180) { red = 0; green = 255; blue = Math.floor(((hue - 120) / 60) * 255); }";
+  html += "else if (hue < 240) { red = 0; green = Math.floor(((240 - hue) / 60) * 255); blue = 255; }";
+  html += "else if (hue < 300) { red = Math.floor(((hue - 240) / 60) * 255); green = 0; blue = 255; }";
+  html += "else { red = 255; green = 0; blue = Math.floor(((360 - hue) / 60) * 255); }";
   html += "return {r: red, g: green, b: blue}; }";
+  html += "fetchData();";
   html += "</script></body></html>";
 
   server.send(200, "text/html", html);
 }
 
-// Handle HTTP request to provide thermal data
+// Function to generate BMP image data in base64 format
 void handleData() {
   String json = "[";
   for (int i = 0; i < 768; i++) {
