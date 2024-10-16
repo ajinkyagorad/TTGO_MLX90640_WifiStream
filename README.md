@@ -3,7 +3,7 @@
 Welcome to the **MLX90640 WiFi Thermal Camera** project! This project combines the MLX90640 thermal camera sensor with an ESP32 board to create a real-time thermal imaging system with a built-in web server. You'll be able to view the thermal stream on an onboard display or via a web browser over WiFi. It's perfect for anyone who wants to experiment with thermal imaging! 😎
 
 ## Demo 🎥
-![Demo Image](https://github.com/ajinkyagorad/TTGO_MLX90640_WifiStream/blob/22417ce4ed0a078ebf3647fa3265e3bafd263cbe/img/demo.jpg)
+![Demo Image](https://github.com/ajinkyagorad/TTGO_MLX90640_WifiStream/blob/a0a189adc0d047f4ba13d627a1ee6c703a28b3f8/img/demo.jpg)
 ![Webpage](https://github.com/ajinkyagorad/TTGO_MLX90640_WifiStream/blob/497417e506a27de9a9bd5614a3c64a63d44bba05/img/webpage.png)
 ## Features ✨
 - **Real-Time Thermal Imaging**: Displays a thermal heatmap using the MLX90640 sensor.
