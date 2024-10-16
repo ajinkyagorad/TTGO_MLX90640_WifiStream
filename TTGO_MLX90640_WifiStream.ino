@@ -160,17 +160,19 @@ uint16_t getColorFromTemp(float temp, float minTemp, float maxTemp)
 
   return tft.color565(red, green, blue);
 }
+
+
 // Handle HTTP request to serve the thermal data
 void handleRoot() {
   String html = "<html><head><title>Thermal Camera Dashboard</title>";
   html += "<style>";
-  html += "body { font-family: Arial, sans-serif; background-color: #ffffff; color: #000000; display: flex; flex-wrap: wrap; justify-content: space-evenly; align-items: center; height: 100vh; margin: 0; overflow: hidden; }";
+  html += "body { font-family: Arial, sans-serif; background-color: #ffffff; color: #000000; display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; height: 80vh; margin: 20px; overflow: hidden; }";
   html += ".section { display: flex; flex-direction: column; align-items: center; }";
-  html += "#thermalCanvas { border: 1px solid #000000; width: 30vw; height: auto; image-rendering: pixelated; }";
-  html += "#minMaxAvg { width: 10vw; text-align: center; }";
+  html += "#thermalCanvas { border: 1px solid #000000; width: 25vw; height: auto; image-rendering: pixelated; }";
+  html += "#minMaxAvg { width: 40vw; text-align: center; }";
   html += "#histChart { width: 20vw; height: auto; }";
-  html += "#tempChart { width: 100vw; height: auto; }";
-  html += ".stat { font-size: 1.2em; margin-top: 10px; }";
+  html += "#tempChart { width: 80vw; height: 30vh; max-height: 30vh; }"; // Set fixed height with max-height
+  html += ".stat { font-size: .8em; margin-top: 3px; }";
   html += "</style></head><body>";
   html += "<div class='section'>";
   html += "<h2>Thermal Image</h2>";
@@ -178,10 +180,8 @@ void handleRoot() {
   html += "</div>";
   html += "<div id='minMaxAvg' class='section'>";
   html += "<h2>Temperature Stats</h2>";
-  html += "<p class='stat'>Min Temp: <span id='minTemp'></span> &#8451;</p>";
-  html += "<p class='stat'>Max Temp: <span id='maxTemp'></span> &#8451;</p>";
-  html += "<p class='stat'>Avg Temp: <span id='avgTemp'></span> &#8451;</p>";
-  html += "<p class='stat'>Y-Axis Limits: <input type='number' id='yMin' value='0'> to <input type='number' id='yMax' value='100'></p>";
+  html += "<p class='stat'>Min Temp: <span id='minTemp'></span> &#8451; | Max Temp: <span id='maxTemp'></span> &#8451; | Avg Temp: <span id='avgTemp'></span> &#8451;</p>";
+  html += "<p class='stat'>Y-Axis Limits: <input type='number' id='yMin' value='20'> to <input type='number' id='yMax' value='40'></p>";
   html += "</div>";
   html += "<div class='section'>";
   html += "<h2>Temperature Distribution</h2>";
@@ -237,7 +237,7 @@ void handleRoot() {
   // Update Charts Function
   html += "function updateCharts(minTemp, maxTemp, avgTemp, data) {";
   html += "  let currentTime = (Date.now() - startTime) / 1000;";
-  html += "  if (minSeries.length >= 20) { minSeries.shift(); maxSeries.shift(); avgSeries.shift(); }";  // Limit data points to 20 seconds
+  html += "  if (minSeries.length >= 20 * 10) { minSeries.shift(); maxSeries.shift(); avgSeries.shift(); }";  // Limit data points to 20 seconds with higher resolution
   html += "  minSeries.push({x: currentTime, y: minTemp});";
   html += "  maxSeries.push({x: currentTime, y: maxTemp});";
   html += "  avgSeries.push({x: currentTime, y: avgTemp});";
@@ -250,44 +250,80 @@ void handleRoot() {
   html += "function renderCharts() {";
   html += "  let yMin = parseFloat(document.getElementById('yMin').value);";
   html += "  let yMax = parseFloat(document.getElementById('yMax').value);";
-
+  
   html += "  if (!tempChart) {";
   html += "    const ctx1 = document.getElementById('tempChart').getContext('2d');";
-  html += "    tempChart = new Chart(ctx1, { type: 'line', data: { datasets: [{ label: 'Min Temp', data: minSeries, borderColor: 'blue', fill: false, pointRadius: 0 }, { label: 'Max Temp', data: maxSeries, borderColor: 'red', fill: false, pointRadius: 0 }, { label: 'Avg Temp', data: avgSeries, borderColor: 'green', fill: false, pointRadius: 0 }] }, options: { responsive: true, maintainAspectRatio: true, scales: { x: { type: 'linear', position: 'bottom', title: { display: true, text: 'Time (s)' }, min: 0, max: 20 }, y: { min: yMin, max: yMax } } } });";
+  html += "    tempChart = new Chart(ctx1, { type: 'line', data: { datasets: [{ label: 'Min Temp', data: minSeries, borderColor: 'blue', fill: false, pointRadius: 0 }, { label: 'Max Temp', data: maxSeries, borderColor: 'red', fill: false, pointRadius: 0 }, { label: 'Avg Temp', data: avgSeries, borderColor: 'green', fill: false, pointRadius: 0 }] }, options: { responsive: true, maintainAspectRatio: false, scales: { x: { type: 'linear', position: 'bottom', title: { display: true, text: 'Time (s)' }, min: Math.max(0, minSeries[0]?.x || 0), max: Math.max(20, minSeries[minSeries.length - 1]?.x || 20) }, y: { min: yMin, max: yMax, ticks: { stepSize: 5 } } } } });";
   html += "  } else {";
   html += "    tempChart.options.scales.y.min = yMin;";
   html += "    tempChart.options.scales.y.max = yMax;";
+  html += "    tempChart.options.scales.x.min = Math.max(0, minSeries[0]?.x || 0);";
+  html += "    tempChart.options.scales.x.max = Math.max(20, minSeries[minSeries.length - 1]?.x || 20);";
   html += "    tempChart.data.datasets[0].data = minSeries;";
   html += "    tempChart.data.datasets[1].data = maxSeries;";
   html += "    tempChart.data.datasets[2].data = avgSeries;";
   html += "    tempChart.update();";
   html += "  }";
-
+  
   html += "  if (!histChart) {";
   html += "    const ctx2 = document.getElementById('histChart').getContext('2d');";
-  html += "    histChart = new Chart(ctx2, { type: 'bar', data: { labels: Array.from({length: 51}, (_, i) => i), datasets: [{ label: 'Temperature Frequency', data: histogram, backgroundColor: 'orange' }] }, options: { responsive: true, maintainAspectRatio: true, scales: { y: { beginAtZero: true } } } });";
+  html += "    histChart = new Chart(ctx2, { type: 'bar', data: { labels: Array.from({length: 51}, (_, i) => i), datasets: [{ label: 'Temperature Frequency', data: histogram, backgroundColor: 'orange' }] }, options: { responsive: true, maintainAspectRatio: true, aspectRatio: 1, scales: { y: { beginAtZero: true } } } });";
   html += "  } else {";
   html += "    histChart.data.datasets[0].data = histogram;";
   html += "    histChart.update();";
   html += "  }";
   html += "}";
 
+
   // Get Color From Temperature
   html += "function getColorFromTemp(temp, minTemp, maxTemp) {";
   html += "let normalized = (temp - minTemp) / (maxTemp - minTemp);";
-  html += "let hue = normalized * 240;"; // Change hue scale to 0-240 to avoid extreme colors
+  html += "let hue = normalized * 360;";  // Use full hue scale from 0 to 360 degrees
   html += "let red = 0, green = 0, blue = 0;";
-  html += "if (hue < 60) { red = 255; green = Math.floor((hue / 60) * 255); blue = 0; }";
-  html += "else if (hue < 120) { red = Math.floor(((120 - hue) / 60) * 255); green = 255; blue = 0; }";
-  html += "else if (hue < 180) { red = 0; green = 255; blue = Math.floor(((hue - 120) / 60) * 255); }";
-  html += "else if (hue < 240) { red = 0; green = Math.floor(((240 - hue) / 60) * 255); blue = 255; }";
+  
+  html += "if (hue < 60) {";
+  html += "  red = 255;";
+  html += "  green = Math.floor((hue / 60) * 255);";
+  html += "  blue = 0;";
+  html += "} else if (hue < 120) {";
+  html += "  red = Math.floor(((120 - hue) / 60) * 255);";
+  html += "  green = 255;";
+  html += "  blue = 0;";
+  html += "} else if (hue < 180) {";
+  html += "  red = 0;";
+  html += "  green = 255;";
+  html += "  blue = Math.floor(((hue - 120) / 60) * 255);";
+  html += "} else if (hue < 240) {";
+  html += "  red = 0;";
+  html += "  green = Math.floor(((240 - hue) / 60) * 255);";
+  html += "  blue = 255;";
+  html += "} else if (hue < 300) {";
+  html += "  red = Math.floor(((hue - 240) / 60) * 255);";
+  html += "  green = 0;";
+  html += "  blue = 255;";
+  html += "} else {";
+  html += "  red = 255;";
+  html += "  green = 0;";
+  html += "  blue = Math.floor(((360 - hue) / 60) * 255);";
+  html += "}";
+
   html += "return {r: red, g: green, b: blue}; }";
+
 
   html += "fetchData();";
   html += "</script></body></html>";
 
   server.send(200, "text/html", html);
 }
+
+
+
+
+
+
+
+
+
 
 
 
