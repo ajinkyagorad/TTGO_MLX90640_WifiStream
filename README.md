@@ -4,7 +4,7 @@ Welcome to the **MLX90640 WiFi Thermal Camera** project! This project combines t
 
 ## Demo 🎥
 ![Demo Image](https://github.com/ajinkyagorad/TTGO_MLX90640_WifiStream/blob/22417ce4ed0a078ebf3647fa3265e3bafd263cbe/img/demo.jpg)
-
+![Webpage](https://github.com/ajinkyagorad/TTGO_MLX90640_WifiStream/blob/497417e506a27de9a9bd5614a3c64a63d44bba05/img/webpage.png)
 ## Features ✨
 - **Real-Time Thermal Imaging**: Displays a thermal heatmap using the MLX90640 sensor.
 - **Web Server Integration**: View the thermal camera output through your browser by connecting to a WiFi network.
